@@ -12,8 +12,6 @@ const request   = require('request-promise').defaults({
     }
 });
 
-const { log } = console;
-
 const {
     readJson,
     saveJson,
@@ -21,19 +19,24 @@ const {
     normalizeBodyEncode,
     normalizeFormEntries,
     removeSmiles,
+} = require('./helpers/common');
+
+const {
     delay,
     getTime,
     getDate,
     timer,
     timeDiff,
     minToMs
-} = require('./helpers');
+} = require('./helpers/time');
 
-const config = readJson(path.join(__dirname, './config.json'));
+const { log } = console;
 
-const LOGIN     = config.login;
-const TOPIC     = config.topic;    
-const SETTINGS  = config.settings;    
+const {
+    login: LOGIN, 
+    topic: TOPIC, 
+    settings: SETTINGS
+}   = require('./config.json');
 
 const signIn = () => {
     return request.post({
@@ -229,17 +232,6 @@ const getStats = (date) => {
     return false
 }
 
-const printStat = (date) => {
-    const stats = getStats(date);
-
-    if (stats) {
-        for (const topicId in stats) {
-            const topic = stats[topicId];
-            log(`[${topic.name.green}]\n[${topicId}][Total: ${String(topic.total).yellow}][Today: ${String(topic.perday).yellow}]`);
-        }
-    }
-}
-
 const printStatTable = (date) => {
     let files = fs.readdirSync(path.join(__dirname, TOPIC.stat));
     const numOfFiles = files.length;
@@ -343,7 +335,7 @@ const smile = async () => {
         logUp.done();
 
         for (const topic of topics) {
-            logUp(`[Smile][${getTime().yellow}][t:${topic}][d:0/0][t:${statSends}/${numOfTopics}][Deleting][Process...]`);
+            logUp(`[Smile][${getTime().yellow}][${topic}][0/0][${statSends}/${numOfTopics}][Deleting][Process...]`);
 
             let delLinks = [];
 
@@ -354,33 +346,35 @@ const smile = async () => {
             }
             
             const numOfDels  = delLinks.length;
+
+            logUp(`[Smile][${getTime().yellow}][${topic}][${statDels}/${numOfDels}][${statSends}/${numOfTopics}][Deleting][Process...]`);
             
             for (const delLink of delLinks) {
                 try {
-                    delSmile(delLink);
-                    
+                    await delSmile(delLink);
+                    ++statDels;
                 } catch (e) {
-                    logUp(`[Smile][${getTime().yellow}][${topic}][d:${statDels}/${numOfDels}][t:${statSends}/${numOfTopics}][Deleting][${'Denied'.red}]`);
+                    logUp(`[Smile][${getTime().yellow}][${topic}][${statDels}/${numOfDels}][${statSends}/${numOfTopics}][Deleting][${'Denied'.red}]`);
                     logUp.done();
 
                     fs.writeFileSync(path.join(__dirname, SETTINGS.error), `[${new Date().toLocaleString('ru')}]\n${e}\n`, {flag: 'a'});
                 }
 
-                logUp(`[Smile][${getTime().yellow}][${topic}][d:${++statDels}/${numOfDels}][t:${statSends}/${numOfTopics}][Deleting][${'Success'.green}]`);
+                logUp(`[Smile][${getTime().yellow}][${topic}][${statDels}/${numOfDels}][${statSends}/${numOfTopics}][Deleting][${'Success'.green}]`);
             }
 
-            logUp(`[Smile][${getTime().yellow}][${topic}][d:${statDels}/${numOfDels}][t:${statSends}/${numOfTopics}][Sending][Process...]`);
+            logUp(`[Smile][${getTime().yellow}][${topic}][${statDels}/${numOfDels}][${statSends}/${numOfTopics}][Sending][Process...]`);
 
             try {
                 await sendSmile(topic);
             } catch (e) {
-                logUp(`[Smile][${getTime().yellow}][${topic}][d:${statDels}/${numOfDels}][t:${statSends}/${numOfTopics}][Sending][[${'Denied'.red}]]`);
+                logUp(`[Smile][${getTime().yellow}][${topic}][${statDels}/${numOfDels}][${statSends}/${numOfTopics}][Sending][[${'Denied'.red}]]`);
                 logUp.done();
 
                 fs.writeFileSync(path.join(__dirname, SETTINGS.error), `[${new Date().toLocaleString('ru')}]\n${e}\n`, {flag: 'a'});
             }
 
-            logUp(`[Smile][${getTime().yellow}][${topic}][d:${statDels}/${numOfDels}][t:${++statSends}/${numOfTopics}][Sending][${'Success'.green}]`);
+            logUp(`[Smile][${getTime().yellow}][${topic}][${statDels}/${numOfDels}][${++statSends}/${numOfTopics}][Sending][${'Success'.green}]`);
             logUp.done();
 
             statDels = 0;
