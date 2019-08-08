@@ -238,7 +238,7 @@ const printStatTable = (date) => {
 
     if (!numOfFiles) return;
 
-    const reDate = /(\d+)-(\d+)-(\d+)/;
+    const reDate = /(\d+)-(\d+)-(\d+)/
 
     files = files.sort((a, b) => {    
         const [aDate, aDay, aMonth, aYear] = a.match(reDate);

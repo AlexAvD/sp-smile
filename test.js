@@ -1,8 +1,11 @@
 const {
     timeToSec,
-    secToTime
-} = require('./helpers');
+    secToTime,
+    timeToStr,
+    getDateTokens,
+    getTime
+} = require('./helpers/time');
 
-const sec = timeToSec('20:03:04');
-console.log(sec);
-console.log(secToTime(sec));
+const { log } = console;
+
+log(getDateTokens());

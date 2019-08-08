@@ -1,16 +1,35 @@
+const timeToStr = (hours, minutes, seconds) => {
+    return `${(hours < 10) ? '0' + hours : hours}:${(minutes < 10) ? '0' + minutes : minutes}:${(seconds < 10) ? '0' + seconds : seconds}`;
+}
+
+const getDateTokens = (...date) => {
+    const d         = new Date(...date);
+    const hours     = d.getHours();
+    const minutes   = d.getMinutes();
+    const seconds   = d.getSeconds();
+    const day       = d.getDate();
+    const month     = d.getMonth();
+    const year      = d.getFullYear();
+
+    return {
+        hours,
+        minutes,
+        seconds,
+        day, 
+        month,
+        year,
+        time: `${(hours < 10) ? '0' + hours : hours}:${(minutes < 10) ? '0' + minutes : minutes}:${(seconds < 10) ? '0' + seconds : seconds}`,
+        date: `${(day < 10) ? '0' + day : day}-${(month < 10) ? '0' + month : month}-${year}`
+    };
+}
+
 const getTime = () => {
     const date      = new Date();
     const hours     = date.getHours();
     const minutes   = date.getMinutes();
     const seconds   = date.getSeconds();
 
-    return `${
-        (hours < 10) ? '0' + hours : hours
-    }:${
-        (minutes < 10) ? '0' + minutes : minutes
-    }:${
-        (seconds < 10) ? '0' + seconds : seconds
-    }`;
+    return timeToStr(hours, minutes, seconds);
 }
 
 const getDate = () => {
@@ -26,11 +45,11 @@ const timer = (waitMs, log, logMs) => {
     return (result) => {
         const interval = setInterval(log, logMs);
 
-        return new Promise(res => {
+        return new Promise(resolve => {
             setTimeout(() => {
                 clearInterval(interval);
     
-                res(result);
+                resolve(result);
             }, waitMs);
         })
     }
@@ -39,7 +58,7 @@ const timer = (waitMs, log, logMs) => {
 const delay = (ms) => (result) => new Promise(resolve => setTimeout(() => resolve(result), ms));
 
 const timeDiff = (msA, msB) => {
-    const diff = Math.abs(msA - msB);
+    const diff          = Math.abs(msA - msB);
 
     const rawSeconds    = Math.floor(diff / 1000);
     const rawMinutes    = Math.floor(rawSeconds / 60);
@@ -48,13 +67,7 @@ const timeDiff = (msA, msB) => {
     const seconds       = rawSeconds % 60;
     const minutes       = rawMinutes % 60;
     
-    return `${
-        (hours < 10) ? '0' + hours : hours
-    }:${
-        (minutes < 10) ? '0' + minutes : minutes
-    }:${
-        (seconds < 10) ? '0' + seconds : seconds
-    }`;
+    return timeToStr(hours, minutes, seconds);
 }
 
 const minToMs = (min) => min * 1000 * 60;
@@ -71,16 +84,8 @@ const secToTime = (seconds) => {
 
     seconds %= 60;
     
-    return `${
-        (hours < 10) ? '0' + hours : hours
-    }:${
-        (minutes < 10) ? '0' + minutes : minutes
-    }:${
-        (seconds < 10) ? '0' + seconds : seconds
-    }`;
+    return timeToStr(hours, minutes, seconds);
 }
-
-
 
 module.exports = {
     delay,
@@ -90,5 +95,6 @@ module.exports = {
     timeDiff,
     minToMs,
     timeToSec,
-    secToTime
+    secToTime,
+    getDateTokens
 }
