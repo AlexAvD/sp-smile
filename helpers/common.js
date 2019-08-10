@@ -2,37 +2,14 @@ const fs    = require('fs');
 const iconv = require('iconv-lite');
 
 const readJson = (pathToFile) => JSON.parse(fs.readFileSync(pathToFile));
+const saveJson = (path, obj, separator) => {fs.writeFileSync(path, JSON.stringify(obj, null, separator), (err) => {if (err) console.log(err)})};
 
-const saveJson = (path, obj, separator) => {
-    fs.writeFileSync(path, JSON.stringify(obj, null, separator), (err) => {if (err) console.log(err)});
-};
-
-const removeSmiles = (str) => str.replace(/(^\s+)|(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff])|(\s(?=\s))|(\s+$)/g, '');
-
-const normalizeInputEncode = (str) => {
-    return iconv.encode(removeSmiles(str), 'win1251');
-}
-
+const normalizeSpaces = (str) => str.replace(/^\s+|\s(?=\s)|\s+$/g, '');
+const removeSmiles = (str) => normalizeSpaces(str.replace(/[^\s\wа-яё.,\/#!$%\^&\*;:@{}=\-`"'+~()\[\]=\\]/ig, ' '));
+const normalizeInputEncode = (str) => iconv.encode(removeSmiles(str), 'win1251');
 const normalizeBodyEncode = (body) => iconv.encode(iconv.decode(body, 'win1251'), 'utf8');
 
-const fileToArr = (pathToFile) => {
-    const str   = fs.readFileSync(pathToFile).toString();
-    const lines = str.split('\r\n').map(el => {
-        const regExp = /(?<=topic\,)\d{7}|^\d{7}$/;
-        el = el.trim();
-        if (el) {
-            if (regExp.test(el)) {
-                return el.match(regExp)[0];    
-            } 
-        }
-        return el;
-        
-    });
-
-    return lines.filter(el => {
-        return el.replace(/[^\d]/g, '');
-    });
-};
+const getFileModTime = (pathToFile) => fs.statSync(pathToFile).mtime;
 
 const normalizeFormEntries = (arr, add) => {
     const form = {};
@@ -50,11 +27,17 @@ const normalizeFormEntries = (arr, add) => {
     return form;
 }
 
+const fileToArr = (pathToFile) => {
+    const posts = fs.readFileSync(pathToFile).toString();
+    const topics = posts.split('\r\n').map(line => +(line.match(/(?<=topic\,)\d{7}|^\d{7}$/g) || [''])[0]).filter(topic => topic);
+    return topics;
+};
 
 module.exports = {
     readJson,
     saveJson,
     fileToArr,
+    getFileModTime,
     normalizeInputEncode,
     normalizeBodyEncode,
     normalizeFormEntries,

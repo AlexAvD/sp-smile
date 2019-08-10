@@ -1,24 +1,23 @@
 const timeToStr = (hours, minutes, seconds) => {
+    hours   = +hours || 0;
+    minutes = +minutes || 0;
+    seconds = +seconds || 0;
+
     return `${(hours < 10) ? '0' + hours : hours}:${(minutes < 10) ? '0' + minutes : minutes}:${(seconds < 10) ? '0' + seconds : seconds}`;
 }
 
-const getDateTokens = (...date) => {
-    const d         = new Date(...date);
-    const hours     = d.getHours();
-    const minutes   = d.getMinutes();
-    const seconds   = d.getSeconds();
-    const day       = d.getDate();
-    const month     = d.getMonth();
-    const year      = d.getFullYear();
-
-    return {
+const getDateAndTime = (...date) => {
+    const {
+        year,
+        month,
+        day,
         hours,
         minutes,
-        seconds,
-        day, 
-        month,
-        year,
-        time: `${(hours < 10) ? '0' + hours : hours}:${(minutes < 10) ? '0' + minutes : minutes}:${(seconds < 10) ? '0' + seconds : seconds}`,
+        seconds
+    } = (new Date(...date)).toLocaleString().match(/(?<year>\d+)-(?<month>\d+)-(?<day>\d+) (?<hours>\d+):(?<minutes>\d+):(?<seconds>\d+)/).groups;
+
+    return {
+        time: timeToStr(hours, minutes, seconds),
         date: `${(day < 10) ? '0' + day : day}-${(month < 10) ? '0' + month : month}-${year}`
     };
 }
@@ -81,10 +80,8 @@ const secToTime = (seconds) => {
     const rawMinutes = Math.floor(seconds / 60);
     const hours = Math.floor(rawMinutes / 60);
     const minutes = rawMinutes % 60;
-
-    seconds %= 60;
     
-    return timeToStr(hours, minutes, seconds);
+    return timeToStr(hours, minutes, seconds % 60);
 }
 
 module.exports = {
@@ -96,5 +93,5 @@ module.exports = {
     minToMs,
     timeToSec,
     secToTime,
-    getDateTokens
+    getDateAndTime
 }

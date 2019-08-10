@@ -2,10 +2,16 @@ const {
     timeToSec,
     secToTime,
     timeToStr,
-    getDateTokens,
+    getDateAndTime,
     getTime
 } = require('./helpers/time');
 
+const {
+    fileToArr
+} = require('./helpers/common');
+
+const fs = require('fs');
+
 const { log } = console;
 
-log(getDateTokens());
+log(fs.readdirSync('./'));

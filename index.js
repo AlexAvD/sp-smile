@@ -13,9 +13,8 @@ const request   = require('request-promise').defaults({
 });
 
 const {
-    readJson,
-    saveJson,
     fileToArr,
+    getFileModTime,
     normalizeBodyEncode,
     normalizeFormEntries,
     removeSmiles,
@@ -23,19 +22,23 @@ const {
 
 const {
     delay,
-    getTime,
-    getDate,
     timer,
     timeDiff,
-    minToMs
+    getDateAndTime,
 } = require('./helpers/time');
+
+const {
+    addStats,
+    printStats
+} = require('./stats')
 
 const { log } = console;
 
 const {
     login: LOGIN, 
-    topic: TOPIC, 
-    settings: SETTINGS
+    topic: TOPIC,
+    error: ERROR,
+    stats: STATS
 }   = require('./config.json');
 
 const signIn = () => {
@@ -106,24 +109,6 @@ const getDelLinks = (topicId, morePages) => {
         });
         
         if (typeof morePages === 'number' && morePages > 0) {
-            const reViews   = /\(Прочитано\s*(\d+)\s*раз\)/;
-            const infoBox   = $('#top_subject').text();
-
-            if (reViews.test(infoBox)) {
-                const views = infoBox.match(reViews)[1];
-
-                if (getStat(topicId)) {
-                    addStat(topicId, views)
-                } else {
-                    const reTopicName   = /(?<=Тема:).+(?=\(Прочитано)/;
-                    const topicName     = removeSmiles(infoBox.match(reTopicName)[0]);
-
-                    if (reTopicName.test(infoBox)) {
-                        addStat(topicId, views, topicName);
-                    }
-                }
-            }
-
             let lastPage    = Number($('#quickModForm > table:nth-child(3) b').html()) - 1;
             let delPages    = [];
             
@@ -163,235 +148,192 @@ const delSmile = (link) => {
             throw `Error: ${err.trim().replace(/\s{2,}/g, ' ')}`;
         }
     });
-}
+};
 
-const addStat = (topicId, views, topicName) => {
-    const statPath = path.join(__dirname, TOPIC.stat);
+const getViews = (topicId) => {
+    return request.get(`${TOPIC.view}${topicId}.new`)
+    .then($ => {
+        const err = $('#bodyarea > div:nth-child(1) > table > tbody .windowbg').text().trim() || $('#errors').text().trim().replace(/\s{2,}/g, ' ');
 
-    if (!fs.existsSync(statPath)) {
-        fs.mkdirSync(statPath);
-    }
+        if (err) throw err;
 
-    const date          = getDate();
-    const statFileName  = `${date}.json`;
-    const statFilePath  = path.join(statPath, statFileName);
+        const infoBox = $('#top_subject').text();
+        const handledInfo = infoBox.match(/Тема:(.+)\(Прочитано\s*(\d+)\s*раз\)/);
 
-    if (!fs.existsSync(statFilePath)) {
-        fs.writeFileSync(statFilePath, '{}');
-    }
+        if (handledInfo) {  
+            const topicName = removeSmiles(handledInfo[1]);
+            const topicViews = +handledInfo[2];
 
-    const stat = readJson(statFilePath);
-    const time = getTime();
-
-    views = +views;
-
-    if (topicId in stat) {
-        const topic     = stat[topicId];
-        const pertime   = views - topic.total;
-
-        topic.pertime.push([time, pertime]);
-        topic.perday += pertime;
-        topic.total = views;
-    } else {
-        stat[topicId] = {
-            name: topicName || "",
-            total: views,
-            perday: 0,
-            pertime: [
-                [time, 0]
-            ]
+            return {
+                topicId,
+                name: topicName,
+                views: topicViews
+            }
         }
-    }
-
-    saveJson(statFilePath, stat);
-}
-
-const getStat = (topicId, date) => {
-    const stat = getStats(date);
-
-    if (stat && (topicId in stat)) {
-        return stat[topicId];
-    }
-    
-    return false
-}
-
-const getStats = (date) => {
-    const statPath = path.join(__dirname, TOPIC.stat);
-    
-    if (fs.existsSync(statPath)) {
-        const statDate      = date || getDate();
-        const statFileName  = `${statDate}.json`;
-        const statFilePath  = path.join(statPath, statFileName);
-    
-        if (fs.existsSync(statFilePath)) {
-            return readJson(statFilePath);
-        }
-    }
-    
-    return false
-}
-
-const printStatTable = (date) => {
-    let files = fs.readdirSync(path.join(__dirname, TOPIC.stat));
-    const numOfFiles = files.length;
-
-    if (!numOfFiles) return;
-
-    const reDate = /(\d+)-(\d+)-(\d+)/
-
-    files = files.sort((a, b) => {    
-        const [aDate, aDay, aMonth, aYear] = a.match(reDate);
-        const [bDate, bDay, bMonth, bYear] = b.match(reDate);
-    
-        if (bYear > aYear) return - 1;
-        else if (bYear < aYear) return 1    
-    
-        if (bMonth > aMonth) return - 1;
-        else if (bYear < aMonth) return 1;
         
-        if (bDay > aDay) return - 1;
-        else if (bDay < aDay) return 1    
-    
-        return 0;
-    });
+        return null;
+    })
+};
 
-    const todayStat     = getStats(files[numOfFiles - 1].match(reDate)[0]);
-    const yesterdayStat = (numOfFiles > 1) ? getStats(files[numOfFiles - 2].match(reDate)[0]) : null;
-    const stats = [];
+const main = async () => {
+    const pathToTopics = path.join(__dirname, TOPIC.file);
+    const pathToLogFile = path.join(__dirname, ERROR.file);
+    const pathToStatsDir = path.join(__dirname, STATS.dir);
+    const pathToTrackStatDir = path.join(__dirname, STATS.trackDir);
+    const pathToTrackTopics = path.join(__dirname, STATS.trackFile);
+    const nextSendTime = TOPIC.wait * 60000;
+    const nextLoginAttemptTime = LOGIN.again * 60000;
+    const frames = [
+        '.  ',
+        '.. ',
+        '...'
+    ];
 
-    for (const topic in todayStat) {
-        stats.push({
-            Topic: +topic,
-            Name: todayStat[topic].name || '',
-            Lately: todayStat[topic].pertime[todayStat[topic].pertime.length - 1][1] || 0,
-            Today: todayStat[topic].perday || 0,
-            Yesterday: (yesterdayStat && (topic in yesterdayStat)) ? yesterdayStat[topic].perday : 0,
-            Total: todayStat[topic].total || 0,
-        });
-    }
+    let trackTopics;
+    let waitingTimeLogin;
+    let waitingTimeSend;
+    let frame;
 
-    console.table(stats.sort((a, b) => b.Today - a.Today));
-}
+    let postsModTime = getFileModTime(pathToTopics);
+    let topics = fileToArr(pathToTopics);
+    let numOfTopics = topics.length;
+    let postsLastModTime;
 
-const smile = async () => {
-    let numOfTopics;
-    let fileLastMod;
-    let fileTimeMod;
-    let topics;
-    let wait;
-    let end;
-    let statSends;
-    let statDels;
-    let loginAgain;
-    let login;
-
-    login       = 0;
-    loginAgain  = minToMs(LOGIN.again)
-
-    while (!login) {
-        logUp(`[Login][${getTime().yellow}][${LOGIN.form.user}][Process...]`);
-        try {
-            await signIn();
-            login = 1;
-        } catch (e) {
-            logUp(`[Login][${getTime().yellow}][${LOGIN.form.user}][${'Denied'.red}]`);
-            logUp.done();
-
-            fs.writeFileSync(path.join(__dirname, SETTINGS.error), `[${new Date().toLocaleString('ru')}]\n${e}\n`, {flag: 'a'});
-
-            login   = 0;
-            wait    = loginAgain;
-            end     = Date.now() + wait;
-
-            await timer(wait, () => {
-                logUp(`[Waiting...][${timeDiff(Date.now(), end).yellow}]`);
-            }, 200)();
-
-            logUp.done();
-        }
-    }
-
-    logUp(`[Login][${getTime().yellow}][${LOGIN.form.user}][${'Success'.green}]`);
-    logUp.done();
-
-    wait        = minToMs(SETTINGS.wait);
-    fileTimeMod = fs.statSync(TOPIC.path).mtime;
-    topics      = fileToArr(TOPIC.path);
-    numOfTopics = topics.length;
+    let smileDelLinks;
+    let smileDelCounter;
+    let numOfSmileDel;
+    let smileSendCounter;
 
     while (true) {
-        fileLastMod = fs.statSync(TOPIC.path).mtime;
+        try {
+            logUp(`[Login][${getDateAndTime().time.yellow}][${LOGIN.form.user}][Process...]`);
 
-        if (fileTimeMod !== fileLastMod) {
-            fileTimeMod = fileLastMod;
-            topics      = fileToArr(TOPIC.path);
-            numOfTopics = topics.length;
-        }
-        
-        statSends = statDels = 0;
+            await signIn();
 
-        logUp(`[Start][${getTime().yellow}]`);
-        logUp.done();
-
-        for (const topic of topics) {
-            logUp(`[Smile][${getTime().yellow}][${topic}][0/0][${statSends}/${numOfTopics}][Deleting][Process...]`);
-
-            let delLinks = [];
-
-            try {
-                delLinks = await getDelLinks(topic, Number(TOPIC.delPages));
-            } catch (e) {
-                fs.writeFileSync(path.join(__dirname, SETTINGS.error), `[${new Date().toLocaleString('ru')}]\n${e}\n`, {flag: 'a'});
-            }
-            
-            const numOfDels  = delLinks.length;
-
-            logUp(`[Smile][${getTime().yellow}][${topic}][${statDels}/${numOfDels}][${statSends}/${numOfTopics}][Deleting][Process...]`);
-            
-            for (const delLink of delLinks) {
-                try {
-                    await delSmile(delLink);
-                    ++statDels;
-                } catch (e) {
-                    logUp(`[Smile][${getTime().yellow}][${topic}][${statDels}/${numOfDels}][${statSends}/${numOfTopics}][Deleting][${'Denied'.red}]`);
-                    logUp.done();
-
-                    fs.writeFileSync(path.join(__dirname, SETTINGS.error), `[${new Date().toLocaleString('ru')}]\n${e}\n`, {flag: 'a'});
-                }
-
-                logUp(`[Smile][${getTime().yellow}][${topic}][${statDels}/${numOfDels}][${statSends}/${numOfTopics}][Deleting][${'Success'.green}]`);
-            }
-
-            logUp(`[Smile][${getTime().yellow}][${topic}][${statDels}/${numOfDels}][${statSends}/${numOfTopics}][Sending][Process...]`);
-
-            try {
-                await sendSmile(topic);
-            } catch (e) {
-                logUp(`[Smile][${getTime().yellow}][${topic}][${statDels}/${numOfDels}][${statSends}/${numOfTopics}][Sending][[${'Denied'.red}]]`);
-                logUp.done();
-
-                fs.writeFileSync(path.join(__dirname, SETTINGS.error), `[${new Date().toLocaleString('ru')}]\n${e}\n`, {flag: 'a'});
-            }
-
-            logUp(`[Smile][${getTime().yellow}][${topic}][${statDels}/${numOfDels}][${++statSends}/${numOfTopics}][Sending][${'Success'.green}]`);
+            logUp(`[Login][${getDateAndTime().time.yellow}][${LOGIN.form.user}][${'Success'.green}]`);
             logUp.done();
 
-            statDels = 0;
+            break;
+        } catch (e) {
+            fs.writeFileSync(path.join(pathToLogFile), `[${new Date().toLocaleString()}]\r\n${e}\r\n`, {flag: 'a'});
+
+            logUp(`[Login][${getDateAndTime().time.yellow}][${LOGIN.form.user}][${'Error'.red}]`);
+            logUp.done();
         }
 
-        printStatTable()
-        
-        end = Date.now() + wait;
+        waitingTimeLogin = Date.now() + nextLoginAttemptTime;
 
-        await timer(wait, () => {
-            logUp(`[Waiting...][${timeDiff(Date.now(), end).yellow}]`);
+        await timer(nextLoginAttemptTime, () => {
+            logUp(`[Waiting...][${timeDiff(Date.now(), waitingTimeLogin).yellow}]`);
         }, 200)();
     }
-}
 
-smile();
+    while (true) {
+        /* Проверка изменений в фала */
 
+        postsLastModTime = getFileModTime(pathToTopics);
+
+        if (postsModTime !== postsLastModTime) {
+            postsModTime = postsLastModTime;
+            topics = fileToArr(pathToTopics);
+            numOfTopics = topics.length;
+        }
+
+        smileSendCounter = 0;
+        
+        for (const topic of topics) {
+            smileDelLinks = [];
+            smileDelCounter = 0;
+            numOfSmileDel = 0;
+
+            /* Удаление  */
+            try {
+                logUp(`[Smile][${getDateAndTime().time.yellow}][${topic}][0/0][${smileSendCounter}/${numOfTopics}][Deleting][Search...]`);
+
+                smileDelLinks = await getDelLinks(topic, +TOPIC.numOfDelPages);
+                numOfSmileDel = smileDelLinks.length;
+            } catch (e) {
+                fs.writeFileSync(pathToLogFile, `[${new Date().toLocaleString('ru')}]\r\n${e}\r\n`, {flag: 'a'});
+
+                logUp.done();
+                logUp(`[Smile][${getDateAndTime().time.yellow}][${topic}][0/0][${smileSendCounter}/${numOfTopics}][Deleting][${'Success'.green}]`);
+                logUp.done();
+            }
+            
+            for (const smileDelLink of smileDelLinks) {
+                try {
+                    logUp(`[Smile][${getDateAndTime().time.yellow}][${topic}][${smileDelCounter}/${numOfSmileDel}][${smileSendCounter}/${numOfTopics}][Deleting][Processing...]`);
+
+                    await delSmile(smileDelLink);
+
+                    logUp(`[Smile][${getDateAndTime().time.yellow}][${topic}][${++smileDelCounter}/${numOfSmileDel}][${smileSendCounter}/${numOfTopics}][Deleting][${'Success'.green}]`);
+                } catch (e) {
+                    fs.writeFileSync(pathToLogFile, `[${new Date().toLocaleString('ru')}]\r\n${e}\r\n`, {flag: 'a'});
+
+                    logUp(`[Smile][${getDateAndTime().time.yellow}][${topic}][${smileDelCounter}/${numOfSmileDel}][${smileSendCounter}/${numOfTopics}][Deleting][${'Error'.red}]`);
+                    logUp.done();
+                }
+            }
+
+            /* Отправка */
+
+            try {
+                logUp(`[Smile][${getDateAndTime().time.yellow}][${topic}][${smileDelCounter}/${numOfSmileDel}][${smileSendCounter}/${numOfTopics}][Sending][Processing...]`);
+
+                await sendSmile(topic);
+
+                logUp(`[Smile][${getDateAndTime().time.yellow}][${topic}][${smileDelCounter}/${numOfSmileDel}][${++smileSendCounter}/${numOfTopics}][Sending][${'Success'.green}]`);
+            } catch (e) {
+                fs.writeFileSync(pathToLogFile, `[${new Date().toLocaleString('ru')}]\r\n${e}\r\n`, {flag: 'a'});
+
+                logUp(`[Smile][${getDateAndTime().time.yellow}][${topic}][${smileDelCounter}/${numOfSmileDel}][${smileSendCounter}/${numOfTopics}][Sending][[${'Error'.red}]]`);
+                logUp.done();
+            }
+        }
+
+        logUp.done();
+
+        /* Статистика */
+
+        try {
+            logUp(`[Stats][${getDateAndTime().time.yellow}][Collection...]`);
+
+            addStats(await Promise.all(topics.map(topic => getViews(topic))), pathToStatsDir);
+
+            logUp(`[Stats][${getDateAndTime().time.yellow}][${'Success'.green}]`);
+            logUp.done();
+
+            printStats(pathToStatsDir);
+
+            trackTopics = (fs.existsSync(pathToTrackTopics)) ? fileToArr(pathToTrackTopics) : [];
+            
+            if (trackTopics.length) {
+                logUp(`[Stats][${getDateAndTime().time.yellow}][Collection...]`);
+
+                addStats(await Promise.all(trackTopics.map(topic => getViews(topic))), pathToTrackStatDir);
+
+                logUp(`[Stats][${getDateAndTime().time.yellow}][${'Success'.green}]`);
+                logUp.done();
+
+                printStats(pathToTrackStatDir);
+            }
+        } catch (e) {
+            fs.writeFileSync(pathToLogFile, `[${new Date().toLocaleString('ru')}]\r\n${e}\r\n`, {flag: 'a'});
+
+            logUp(`[${getDateAndTime().time.yellow}][${'Error'.red}]`);
+            logUp.done();
+        }
+
+        waitingTimeSend = Date.now() + nextSendTime;
+        frame = -1;
+
+        await timer(nextSendTime, () => {
+            logUp(`[Waiting${frames[frame = ++frame % frames.length]}][${timeDiff(Date.now(), waitingTimeSend).yellow}]`);
+        }, 200)();
+    }
+};
+
+main();
 
 
 
