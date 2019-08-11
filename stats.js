@@ -10,8 +10,8 @@ const {
     saveJson
 } = require('./helpers/common');
 
-const addStats = (topicStats, pathToStatsDir) => {
-    if (!Array.isArray(topicStats)) throw Error('topicStats must be an array');
+const addStats = (topicsStats, pathToStatsDir) => {
+    if (!Array.isArray(topicsStats)) throw Error('topicsStats must be an array');
     if (!pathToStatsDir) throw Error('path not specified');
 
     if (!fs.existsSync(pathToStatsDir)) {
@@ -24,16 +24,16 @@ const addStats = (topicStats, pathToStatsDir) => {
 
     let stats = (fs.existsSync(pathToStatsFile)) ? readJson(pathToStatsFile) : {};
 
-    for (const topic of topicStats) {
+    for (const topic of topicsStats) {
         if (!topic) continue;
 
-        const { topicId, name, views } = topic;
+        const { topic: topicId, name, views } = topic;
 
         if (!topicId && !name && !views) continue;
 
         if (topicId in stats) {
             const topicStats = stats[topicId];
-            const lately    = views - topicStats.total;
+            const lately = views - topicStats.total;
     
             topicStats.total  = views;
             topicStats.perday += lately;

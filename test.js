@@ -3,7 +3,9 @@ const {
     secToTime,
     timeToStr,
     getDateAndTime,
-    getTime
+    getTime,
+    wait,
+    timeDiff
 } = require('./helpers/time');
 
 const {
@@ -11,7 +13,8 @@ const {
 } = require('./helpers/common');
 
 const fs = require('fs');
+const querystring = require('querystring');
 
 const { log } = console;
 
-log(fs.readdirSync('./'));
+console.log(timeDiff(Date.now(), Date.now() + 3000))

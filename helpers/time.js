@@ -40,18 +40,16 @@ const getDate = () => {
     return `${(day < 10) ? '0' + day : day}-${(month < 10) ? '0' + month : month}-${year}`;
 }
 
-const timer = (waitMs, log, logMs) => {
-    return (result) => {
-        const interval = setInterval(log, logMs);
+const wait = (waitMs, logFn, logMs = 200) => {
+    const interval = (typeof logFn === 'function') ? setInterval(logFn, logMs) : null;
 
-        return new Promise(resolve => {
-            setTimeout(() => {
-                clearInterval(interval);
-    
-                resolve(result);
-            }, waitMs);
-        })
-    }
+    return new Promise(resolve => {
+        setTimeout(() => {
+            if (interval) clearInterval(interval);
+            
+            resolve();
+        }, waitMs);
+    })
 }
 
 const delay = (ms) => (result) => new Promise(resolve => setTimeout(() => resolve(result), ms));
@@ -88,7 +86,7 @@ module.exports = {
     delay,
     getTime,
     getDate,
-    timer,
+    wait,
     timeDiff,
     minToMs,
     timeToSec,

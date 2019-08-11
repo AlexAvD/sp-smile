@@ -6,25 +6,18 @@ const saveJson = (path, obj, separator) => {fs.writeFileSync(path, JSON.stringif
 
 const normalizeSpaces = (str) => str.replace(/^\s+|\s(?=\s)|\s+$/g, '');
 const removeSmiles = (str) => normalizeSpaces(str.replace(/[^\s\wа-яё.,\/#!$%\^&\*;:@{}=\-`"'+~()\[\]=\\]/ig, ' '));
-const normalizeInputEncode = (str) => iconv.encode(removeSmiles(str), 'win1251');
-const normalizeBodyEncode = (body) => iconv.encode(iconv.decode(body, 'win1251'), 'utf8');
+const normalizeBody = (body) => iconv.encode(iconv.decode(body, 'win1251'), 'utf8');
 
 const getFileModTime = (pathToFile) => fs.statSync(pathToFile).mtime;
 
-const normalizeFormEntries = (arr, add) => {
-    const form = {};
-
-    arr.forEach(el => {
-        form[normalizeInputEncode(el.name)] = normalizeInputEncode(el.value);
-    });
-
-    if (add && typeof add === 'object') {
-        for (const field in add) {
-            form[normalizeInputEncode(field)] = normalizeInputEncode(add[field]);
+const normalizeFormToSend = (formData) => {
+    for (const field in formData) {
+        if (field === 'subject' || field === 'message') {
+            formData[field] = iconv.encode(removeSmiles(formData[field]), 'win1251');
         }
     }
 
-    return form;
+    return formData;
 }
 
 const fileToArr = (pathToFile) => {
@@ -38,8 +31,7 @@ module.exports = {
     saveJson,
     fileToArr,
     getFileModTime,
-    normalizeInputEncode,
-    normalizeBodyEncode,
-    normalizeFormEntries,
+    normalizeBody,
+    normalizeFormToSend,
     removeSmiles,
 }

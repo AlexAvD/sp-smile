@@ -3,26 +3,24 @@ const fs        = require('fs');
 const logUp     = require('log-update');
 const path      = require('path');
 const colors    = require('colors');
-const request   = require('request-promise').defaults({
+const request = require('request-promise').defaults({
     jar: true, 
     encoding: null, 
     simple: false, 
-    transform: (body) => {
-        return cheerio.load(normalizeBodyEncode(body), { decodeEntities: false })
-    }
+    transform: (body) => cheerio.load(normalizeBody(body), { decodeEntities: false })
 });
 
 const {
     fileToArr,
     getFileModTime,
-    normalizeBodyEncode,
-    normalizeFormEntries,
+    normalizeBody,
+    normalizeFormToSend,
     removeSmiles,
 } = require('./helpers/common');
 
 const {
     delay,
-    timer,
+    wait,
     timeDiff,
     getDateAndTime,
 } = require('./helpers/time');
@@ -39,9 +37,9 @@ const {
     topic: TOPIC,
     error: ERROR,
     stats: STATS
-}   = require('./config.json');
+} = require('./config.json');
 
-const signIn = () => {
+const login = () => {
     return request.post({
         uri: LOGIN.url,
         form: LOGIN.form
@@ -59,22 +57,27 @@ const signIn = () => {
     });
 };
 
-const sendSmile = (topicId) => {
+const getFormData = (topicId) => {
     return request.get(`${TOPIC.edit}${topicId}`)
-    .then(delay(Number(TOPIC.interval)))
     .then($ => {
         const err = $('#bodyarea > div:nth-child(1) > table > tbody .windowbg').text().trim();
 
-        if (err) {
-            throw `Error: ${err}`;
-        }
+        if (err) throw err;
 
-        const form = normalizeFormEntries($('#postmodify').serializeArray(), TOPIC.form);
+        const form = {};
 
-        return request.post({
-            uri: TOPIC.send,
-            formData: form,
-        });   
+        $('#postmodify').serializeArray().forEach(el => {
+            form[el.name] = el.value;
+        });
+
+        return form; 
+    })
+}
+
+const sendPost = (formData) => {
+    return request.post({
+        uri: TOPIC.send,
+        formData: formData,
     })
     .then($ => {
         if ($.text()) {
@@ -82,7 +85,7 @@ const sendSmile = (topicId) => {
             
             if (err) {
                 if (/2 секунд/.test(err)) {
-                    return sendSmile(topicId);
+                    return false;
                 } else {
                     throw `Error: ${err}`;
                 }
@@ -90,56 +93,45 @@ const sendSmile = (topicId) => {
 
             throw $.text().replace(/^[\s]+/gm, '');
         }
-    });
-};
 
-const getDelLinks = (topicId, morePages) => {
-    return request.get(`${TOPIC.view}${topicId}.new`)
-    .then($ => {
-        const delMark = TOPIC.delmark;
-        const delPosts= [];
-        let postText  = '';
-        
-        $('.post').each((i, el) => {
-            postText = $(el).text();
-
-            if (postText === delMark) {
-                delPosts.push($(el).siblings('table').find('a[onclick*="Удалить это сообщение"]').attr('href'));
-            }
-        });
-        
-        if (typeof morePages === 'number' && morePages > 0) {
-            let lastPage    = Number($('#quickModForm > table:nth-child(3) b').html()) - 1;
-            let delPages    = [];
-            
-            if (lastPage >= morePages) {    
-                while(morePages--) {
-                    delPages.push(`${TOPIC.view}${topicId}.${--lastPage * 15}`);
-                }
-            }
-
-            return Promise.all([delPosts, ...delPages.map((link) => {
-                return getDelLinks(link);
-            })])
-        }
-
-        return delPosts; 
+        return true;
     })
-    .then(links => {
-        if (Array.isArray(links[0])) {
-            return links.reduce((prev, curr) => {
-                return [
-                    ...prev,
-                    ...curr
-                ];
-            });
+}
+
+const getDelLinksOnPage = ($) => {
+    const postDelText = TOPIC.markToDel;
+    const postDelLinks = [];
+    let postText = '';
+    let postDelLink;
+    
+    $('.post').each((i, el) => {
+        postText = $(el).text();
+        postDelLink = $(el).siblings('table').find('a[onclick*="Удалить это сообщение"]');
+
+        if (postText === postDelText) {
+            postDelLinks.push(postDelLink.attr('href'));
+        }
+    });
+
+    return postDelLinks;
+}
+
+const getPagesWithDelLinks = (topicId, pages) => {
+    return  request.get(`${TOPIC.view}${topicId}.new`)
+    .then($ => {
+        let pageLinks = [];
+        let lastPage;
+
+        if (typeof pages === 'number' && pages > 0) {
+            lastPage = +$('#quickModForm > table:nth-child(3) b').html() - 1;
+            pageLinks = Array.from(Array((pages <= lastPage) ? pages: lastPage) , () => `${TOPIC.view}${topicId}.${--lastPage * 15}`);
         }
 
-        return links;
+        return Promise.all([$, ...pageLinks.map(pageLink => request.get(pageLink))]);
     });
 }
 
-const delSmile = (link) => {
+const delPost = (link) => {
     return request.get(link)
     .then($ => {
         const err = $('#errors').text();
@@ -165,7 +157,7 @@ const getViews = (topicId) => {
             const topicViews = +handledInfo[2];
 
             return {
-                topicId,
+                topic: topicId,
                 name: topicName,
                 views: topicViews
             }
@@ -175,21 +167,41 @@ const getViews = (topicId) => {
     })
 };
 
+const getViewsFromPage = ($) => {
+    const infoBox = $('#top_subject').text();
+    const handledInfo = infoBox.match(/Тема:(.+)\(Прочитано\s*(\d+)\s*раз\)/);
+
+    if (handledInfo) {  
+        const topicName = removeSmiles(handledInfo[1]);
+        const topicViews = +handledInfo[2];
+
+        return {
+            name: topicName,
+            views: topicViews
+        }
+    }
+    
+    return null;
+}
+
 const main = async () => {
-    const pathToTopics = path.join(__dirname, TOPIC.file);
-    const pathToLogFile = path.join(__dirname, ERROR.file);
-    const pathToStatsDir = path.join(__dirname, STATS.dir);
-    const pathToTrackStatDir = path.join(__dirname, STATS.trackDir);
-    const pathToTrackTopics = path.join(__dirname, STATS.trackFile);
-    const nextSendTime = TOPIC.wait * 60000;
-    const nextLoginAttemptTime = LOGIN.again * 60000;
+    const pathToTopics          = path.join(__dirname, TOPIC.file);
+    const pathToLogFile         = path.join(__dirname, ERROR.file);
+    const pathToStatsDir        = path.join(__dirname, STATS.dir);
+    const pathToTrackStatsDir   = path.join(__dirname, STATS.trackDir);
+    const pathToTrackTopics     = path.join(__dirname, STATS.trackFile);
+    const numOfDelPages         = +TOPIC.numOfDelPages;
+    const nextSendTime          = +TOPIC.wait * 60000;
+    const nextLoginAttemptTime  = +LOGIN.again * 60000;
+    const sendInterval          = +TOPIC.interval * 1000;
     const frames = [
-        '.  ',
-        '.. ',
-        '...'
+        ' | ',
+        ' / ',
+        ' - ',
+        ' \\ '
     ];
 
-    let trackTopics;
+    let trackTopicsStats;
     let waitingTimeLogin;
     let waitingTimeSend;
     let frame;
@@ -199,16 +211,25 @@ const main = async () => {
     let numOfTopics = topics.length;
     let postsLastModTime;
 
-    let smileDelLinks;
-    let smileDelCounter;
-    let numOfSmileDel;
-    let smileSendCounter;
+    let pagesWithDelLinks;
+    let delLinks;
+    let delCounter;
+    let numOfDel;
+
+    let statsOnPage;
+    let stats;
+
+    let sendCounter;
+    let formData;
+    let isSended;
+
+    /* Вход в систему */
 
     while (true) {
         try {
             logUp(`[Login][${getDateAndTime().time.yellow}][${LOGIN.form.user}][Process...]`);
 
-            await signIn();
+            await login();
 
             logUp(`[Login][${getDateAndTime().time.yellow}][${LOGIN.form.user}][${'Success'.green}]`);
             logUp.done();
@@ -223,14 +244,18 @@ const main = async () => {
 
         waitingTimeLogin = Date.now() + nextLoginAttemptTime;
 
-        await timer(nextLoginAttemptTime, () => {
-            logUp(`[Waiting...][${timeDiff(Date.now(), waitingTimeLogin).yellow}]`);
-        }, 200)();
+        await wait(nextLoginAttemptTime, () => {
+            const currTimeDiff = timeDiff(Date.now(), waitingTimeLogin).yellow;
+            logUp(`[Waiting...][${currTimeDiff}]`);
+        }, 200);
     }
 
     while (true) {
-        /* Проверка изменений в фала */
 
+        /* Проверка изменений в фале */
+
+        sendCounter = 0;
+        stats = [];
         postsLastModTime = getFileModTime(pathToTopics);
 
         if (postsModTime !== postsLastModTime) {
@@ -239,54 +264,79 @@ const main = async () => {
             numOfTopics = topics.length;
         }
 
-        smileSendCounter = 0;
-        
         for (const topic of topics) {
-            smileDelLinks = [];
-            smileDelCounter = 0;
-            numOfSmileDel = 0;
+            pagesWithDelLinks = [];
+            delLinks = [];
+            delCounter = 0;
+            numOfDel = 0;
+            statsOnPage = {};
+            isSended = false;
 
-            /* Удаление  */
+            /* Поиск постов для удаления */
+
             try {
-                logUp(`[Smile][${getDateAndTime().time.yellow}][${topic}][0/0][${smileSendCounter}/${numOfTopics}][Deleting][Search...]`);
+                logUp(`[Smile][${getDateAndTime().time.yellow}][${topic}][0/0][${sendCounter}/${numOfTopics}][Deleting][Search...]`);
 
-                smileDelLinks = await getDelLinks(topic, +TOPIC.numOfDelPages);
-                numOfSmileDel = smileDelLinks.length;
+                pagesWithDelLinks = await getPagesWithDelLinks(topic, numOfDelPages);
+                delLinks = pagesWithDelLinks.reduce((delLinks, $) => [...delLinks, ...getDelLinksOnPage($)], []);
+                numOfDel = delLinks.length;
+                statsOnPage = {
+                    topic,
+                    ...getViewsFromPage(pagesWithDelLinks[0])
+                };
+                stats.push(statsOnPage);
+
             } catch (e) {
                 fs.writeFileSync(pathToLogFile, `[${new Date().toLocaleString('ru')}]\r\n${e}\r\n`, {flag: 'a'});
 
-                logUp.done();
-                logUp(`[Smile][${getDateAndTime().time.yellow}][${topic}][0/0][${smileSendCounter}/${numOfTopics}][Deleting][${'Success'.green}]`);
+                logUp(`[Smile][${getDateAndTime().time.yellow}][${topic}][0/0][${sendCounter}/${numOfTopics}][Deleting][${'Error'.red}]`);
                 logUp.done();
             }
-            
-            for (const smileDelLink of smileDelLinks) {
-                try {
-                    logUp(`[Smile][${getDateAndTime().time.yellow}][${topic}][${smileDelCounter}/${numOfSmileDel}][${smileSendCounter}/${numOfTopics}][Deleting][Processing...]`);
 
-                    await delSmile(smileDelLink);
+            /* Удаление постов */
 
-                    logUp(`[Smile][${getDateAndTime().time.yellow}][${topic}][${++smileDelCounter}/${numOfSmileDel}][${smileSendCounter}/${numOfTopics}][Deleting][${'Success'.green}]`);
-                } catch (e) {
-                    fs.writeFileSync(pathToLogFile, `[${new Date().toLocaleString('ru')}]\r\n${e}\r\n`, {flag: 'a'});
+            for (const delLink of delLinks) {
+                if (delLink) {
+                    try {
+                        logUp(`[Smile][${getDateAndTime().time.yellow}][${topic}][${delCounter}/${numOfDel}][${sendCounter}/${numOfTopics}][Deleting][Processing...]`);
 
-                    logUp(`[Smile][${getDateAndTime().time.yellow}][${topic}][${smileDelCounter}/${numOfSmileDel}][${smileSendCounter}/${numOfTopics}][Deleting][${'Error'.red}]`);
-                    logUp.done();
+                        await delPost(delLink);
+
+                        logUp(`[Smile][${getDateAndTime().time.yellow}][${topic}][${++delCounter}/${numOfDel}][${sendCounter}/${numOfTopics}][Deleting][${'Success'.green}]`);
+                    } catch (e) {
+                        fs.writeFileSync(pathToLogFile, `[${new Date().toLocaleString('ru')}]\r\n${e}\r\n`, {flag: 'a'});
+    
+                        logUp(`[Smile][${getDateAndTime().time.yellow}][${topic}][${delCounter}/${numOfDel}][${sendCounter}/${numOfTopics}][Deleting][${'Error'.red}]`);
+                        logUp.done();
+                    }   
                 }
             }
 
             /* Отправка */
 
             try {
-                logUp(`[Smile][${getDateAndTime().time.yellow}][${topic}][${smileDelCounter}/${numOfSmileDel}][${smileSendCounter}/${numOfTopics}][Sending][Processing...]`);
+                logUp(`[Smile][${getDateAndTime().time.yellow}][${topic}][${delCounter}/${numOfDel}][${sendCounter}/${numOfTopics}][Sending][Processing...]`);
 
-                await sendSmile(topic);
+                formData = await getFormData(topic);
 
-                logUp(`[Smile][${getDateAndTime().time.yellow}][${topic}][${smileDelCounter}/${numOfSmileDel}][${++smileSendCounter}/${numOfTopics}][Sending][${'Success'.green}]`);
+                while (!isSended) {
+                    waitingTimeSend = Date.now() + sendInterval;
+
+                    await wait(sendInterval, () => {
+                        const currTime = getDateAndTime().time.yellow;
+                        const currTimeDiff = timeDiff(Date.now(), waitingTimeSend).yellow;
+
+                        logUp(`[Smile][${currTime}][${topic}][${delCounter}/${numOfDel}][${sendCounter}/${numOfTopics}][Sending][${currTimeDiff}]`);
+                    });
+
+                    isSended = await sendPost(normalizeFormToSend({...formData, ...TOPIC.form}));
+                }
+
+                logUp(`[Smile][${getDateAndTime().time.yellow}][${topic}][${delCounter}/${numOfDel}][${++sendCounter}/${numOfTopics}][Sending][${'Success'.green}]`);
             } catch (e) {
                 fs.writeFileSync(pathToLogFile, `[${new Date().toLocaleString('ru')}]\r\n${e}\r\n`, {flag: 'a'});
 
-                logUp(`[Smile][${getDateAndTime().time.yellow}][${topic}][${smileDelCounter}/${numOfSmileDel}][${smileSendCounter}/${numOfTopics}][Sending][[${'Error'.red}]]`);
+                logUp(`[Smile][${getDateAndTime().time.yellow}][${topic}][${delCounter}/${numOfDel}][${sendCounter}/${numOfTopics}][Sending][[${'Error'.red}]]`);
                 logUp.done();
             }
         }
@@ -295,49 +345,42 @@ const main = async () => {
 
         /* Статистика */
 
-        try {
-            logUp(`[Stats][${getDateAndTime().time.yellow}][Collection...]`);
+        addStats(stats, pathToStatsDir);
+        printStats(pathToStatsDir);
 
-            addStats(await Promise.all(topics.map(topic => getViews(topic))), pathToStatsDir);
+        trackTopicsStats = (fs.existsSync(pathToTrackTopics)) ? fileToArr(pathToTrackTopics) : [];
 
-            logUp(`[Stats][${getDateAndTime().time.yellow}][${'Success'.green}]`);
-            logUp.done();
+        if (trackTopicsStats.length) {
+            try {
+                addStats(await Promise.all(trackTopicsStats.map(topic => getViews(topic))), pathToTrackStatsDir);
+                printStats(pathToTrackStatsDir);
+            } catch (e) {
+                fs.writeFileSync(pathToLogFile, `[${new Date().toLocaleString('ru')}]\r\n${e}\r\n`, {flag: 'a'});
 
-            printStats(pathToStatsDir);
-
-            trackTopics = (fs.existsSync(pathToTrackTopics)) ? fileToArr(pathToTrackTopics) : [];
-            
-            if (trackTopics.length) {
-                logUp(`[Stats][${getDateAndTime().time.yellow}][Collection...]`);
-
-                addStats(await Promise.all(trackTopics.map(topic => getViews(topic))), pathToTrackStatDir);
-
-                logUp(`[Stats][${getDateAndTime().time.yellow}][${'Success'.green}]`);
-                logUp.done();
-
-                printStats(pathToTrackStatDir);
+                logUp(`[Track-stats][${getDateAndTime().time.yellow}][${'Error'.red}]`);
+                logUp.done();            
             }
-        } catch (e) {
-            fs.writeFileSync(pathToLogFile, `[${new Date().toLocaleString('ru')}]\r\n${e}\r\n`, {flag: 'a'});
-
-            logUp(`[${getDateAndTime().time.yellow}][${'Error'.red}]`);
-            logUp.done();
         }
 
         waitingTimeSend = Date.now() + nextSendTime;
         frame = -1;
 
-        await timer(nextSendTime, () => {
-            logUp(`[Waiting${frames[frame = ++frame % frames.length]}][${timeDiff(Date.now(), waitingTimeSend).yellow}]`);
-        }, 200)();
+        await wait(nextSendTime, () => {
+            const currFrame = frames[frame = ++frame % frames.length];
+            const currTimeDiff = timeDiff(Date.now(), waitingTimeSend).yellow;
+
+            logUp(`[Waiting${currFrame}][${currTimeDiff}]`);
+        });
     }
 };
 
 main();
 
-
-
-
+/* 
+(async () => {
+    
+})();
+*/
 
 
 
