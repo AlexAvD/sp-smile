@@ -122,8 +122,8 @@ const getPagesWithDelLinks = (topicId, pages) => {
         let lastPage;
 
         if (typeof pages === 'number' && pages > 0) {
-            lastPage = +$('#quickModForm > table:nth-child(3) b').html() - 1;
-            pageLinks = Array.from(Array((pages <= lastPage) ? pages: lastPage) , () => `${TOPIC.view}${topicId}.${--lastPage * 15}`);
+            lastPage = +$('#quickModForm > table:nth-child(3) .middletext > b:last-of-type').text() - 1;
+            pageLinks = Array.from(new Array((pages <= lastPage) ? pages : lastPage) , () => `${TOPIC.view}${topicId}.${--lastPage * 15}`);
         }
 
         return Promise.all([$, ...pageLinks.map(pageLink => request.get(pageLink))]);
@@ -375,12 +375,19 @@ const main = async () => {
 
 main();
 
-/* 
-(async () => {
+/* (async () => {
+    await login();
+    try {
+        const pages = await getPagesWithDelLinks(1889576, 1);
+        const delLinks = pages.reduce((delLinks, $) => [...delLinks, ...getDelLinksOnPage($)], []);
+        console.log(delLinks);
+    } catch (e) {
+        console.log(e);
+    }
     
 })();
-*/
 
+ */
 
 
 
