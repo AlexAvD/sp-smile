@@ -19,7 +19,6 @@ const {
 } = require('./helpers/common');
 
 const {
-    delay,
     wait,
     timeDiff,
     getDateAndTime,

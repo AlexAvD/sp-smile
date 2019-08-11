@@ -62,10 +62,22 @@ const addStats = (topicsStats, pathToStatsDir) => {
     saveJson(pathToStatsFile, stats, '\t');
 }
 
-const getStats = (date, pathToStatsDir) => {    
+const getStats = (date, pathToStatsDir) => {        
+    if (date) {
+        if (!pathToStatsDir) {
+            pathToStatsDir = date;
+            date = null;
+        }
+    } else {
+        if (!pathToStatsDir) {
+            throw Error('path not specified');
+        }
+    }
+
     if (fs.existsSync(pathToStatsDir)) {
-        const d = date || getDateAndTime().date;
-        const fileName  = `${d}.json`;
+        
+        date = date ? getDateAndTime(date).date : getDateAndTime().date;
+        const fileName  = `${date}.json`;
         const pathToStatsFile  = path.join(pathToStatsDir, fileName);
     
         if (fs.existsSync(pathToStatsFile)) {
@@ -80,14 +92,14 @@ const printStats = (date, pathToStatsDir) => {
     if (date) {
         if (!pathToStatsDir) {
             pathToStatsDir = date;
-            date = null;    
+            date = null;
         }
     } else {
         throw Error('path not specified');
     }
 
     const todayStats = getStats(date, pathToStatsDir);
-    const yesterdayStats = date ? null : getStats(Date.now() - 86400000);
+    const yesterdayStats = date ? getStats(date - 86400000, pathToStatsDir) : getStats(Date.now() - 86400000, pathToStatsDir);
     const stats = [];
 
     if (todayStats) {
