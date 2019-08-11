@@ -12,9 +12,13 @@ const {
     fileToArr
 } = require('./helpers/common');
 
+const {
+    printStats
+} = require('./stats');
+
 const fs = require('fs');
 const querystring = require('querystring');
 
 const { log } = console;
 
-console.log(timeDiff(Date.now(), Date.now() + 3000))
+printStats('./statistics/');

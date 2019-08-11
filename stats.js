@@ -1,5 +1,17 @@
 const path = require('path');
 const fs = require('fs');
+const {
+    green,
+    cyan,
+    magenta,
+    yellow
+} = require('colors');
+const { 
+    table,
+    getBorderCharacters
+} = require('table');
+
+const { log } = console;
 
 const {
     getDateAndTime
@@ -104,17 +116,30 @@ const printStats = (date, pathToStatsDir) => {
 
     if (todayStats) {
         for (const topic in todayStats) {
-            stats.push({
-                name: todayStats[topic].name || '',
-                lately: todayStats[topic].lately|| 0,
-                today: todayStats[topic].perday || 0,
-                yesterday: (yesterdayStats && (topic in yesterdayStats)) ? yesterdayStats[topic].perday : 0,
-                total: todayStats[topic].total || 0,
-            });
+            stats.push([
+                topic,
+                todayStats[topic].name || '',
+                todayStats[topic].lately || 0,
+                todayStats[topic].perday || 0,
+                (yesterdayStats && (topic in yesterdayStats)) ? yesterdayStats[topic].perday : 0,
+                todayStats[topic].total || 0,
+            ]);
         }
     }
 
-    console.table(stats.sort((a, b) => b.today - a.today));
+    log(table([
+        ['topic'.bold, 'name'.bold, 'lately'.bold, 'today'.bold, 'yesterday'.bold, 'total'.bold],
+        ...stats.sort((a, b) => b[3] - a[3]).map(row => [
+            yellow(row[0]), 
+            row[1],
+            yellow(row[2]), 
+            yellow(row[3]), 
+            yellow(row[4]), 
+            yellow(row[5]), 
+        ])
+    ], {
+        border: getBorderCharacters('norc')
+    }));
 }
 
 
