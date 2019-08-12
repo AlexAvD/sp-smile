@@ -1,9 +1,6 @@
 const path = require('path');
 const fs = require('fs');
 const {
-    green,
-    cyan,
-    magenta,
     yellow
 } = require('colors');
 const { 
@@ -138,7 +135,21 @@ const printStats = (date, pathToStatsDir) => {
             yellow(row[5]), 
         ])
     ], {
-        border: getBorderCharacters('norc')
+        border: getBorderCharacters('norc'),
+        drawHorizontalLine: (index, size) => {
+            return index === 0 || index === 1 || index === size;
+        },
+        columns: {
+            2: {
+                alignment: 'center'
+            },
+            3: {
+                alignment: 'center'
+            },
+            4: {
+                alignment: 'center'
+            }
+        }
     }));
 }
 

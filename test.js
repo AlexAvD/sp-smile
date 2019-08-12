@@ -17,8 +17,16 @@ const {
 } = require('./stats');
 
 const fs = require('fs');
-const querystring = require('querystring');
+
+const {
+    bgMagenta
+} = require('colors');
+
+const { 
+    table,
+    getBorderCharacters
+} = require('table');
 
 const { log } = console;
 
-printStats('./statistics/');
+// printStats('./statistics');
