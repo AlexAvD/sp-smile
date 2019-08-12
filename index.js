@@ -154,12 +154,15 @@ const getViews = (topicId) => {
         if (handledInfo) {  
             const topicName = removeSmiles(handledInfo[1]);
             const topicViews = +handledInfo[2];
+            const { date, time } = getDateAndTime();
 
             return {
-                topic: topicId,
+                date,
+                time,
+                topicId,
                 name: topicName,
                 views: topicViews
-            }
+            };
         }
         
         return null;
@@ -173,8 +176,11 @@ const getViewsFromPage = ($) => {
     if (handledInfo) {  
         const topicName = removeSmiles(handledInfo[1]);
         const topicViews = +handledInfo[2];
+        const { date, time } = getDateAndTime();
 
         return {
+            date,
+            time,
             name: topicName,
             views: topicViews
         }
@@ -215,7 +221,6 @@ const main = async () => {
     let delCounter;
     let numOfDel;
 
-    let statsOnPage;
     let stats;
 
     let sendCounter;
@@ -268,7 +273,6 @@ const main = async () => {
             delLinks = [];
             delCounter = 0;
             numOfDel = 0;
-            statsOnPage = {};
             isSended = false;
 
             /* Поиск постов для удаления */
@@ -279,11 +283,10 @@ const main = async () => {
                 pagesWithDelLinks = await getPagesWithDelLinks(topic, numOfDelPages);
                 delLinks = pagesWithDelLinks.reduce((delLinks, $) => [...delLinks, ...getDelLinksOnPage($)], []);
                 numOfDel = delLinks.length;
-                statsOnPage = {
-                    topic,
+                stats.push({
+                    topicId: topic,
                     ...getViewsFromPage(pagesWithDelLinks[0])
-                };
-                stats.push(statsOnPage);
+                });
 
             } catch (e) {
                 fs.writeFileSync(pathToLogFile, `[${new Date().toLocaleString('ru')}]\r\n${e}\r\n`, {flag: 'a'});

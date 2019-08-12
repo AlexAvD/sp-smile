@@ -29,4 +29,4 @@ const {
 
 const { log } = console;
 
-// printStats('./statistics');
+printStats('./statistics');

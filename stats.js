@@ -27,18 +27,26 @@ const addStats = (topicsStats, pathToStatsDir) => {
         fs.mkdirSync(pathToStatsDir);
     }
 
-    const d = getDateAndTime();
-    const fileName = `${d.date}.json`;
-    const pathToStatsFile = path.join(pathToStatsDir, fileName);
-
+    let d = getDateAndTime().date;
+    let fileName = `${d}.json`;
+    let pathToStatsFile = path.join(pathToStatsDir, fileName);
     let stats = (fs.existsSync(pathToStatsFile)) ? readJson(pathToStatsFile) : {};
 
     for (const topic of topicsStats) {
         if (!topic) continue;
 
-        const { topic: topicId, name, views } = topic;
+        const { topicId, name, views, date, time } = topic;
 
-        if (!topicId && !name && !views) continue;
+        if (!topicId || !name || !views || !date || !time) continue;
+
+        if (date !== d) {
+            saveJson(pathToStatsFile, stats, '\t');
+
+            d = date;
+            fileName = `${d}.json`;
+            pathToStatsFile = path.join(pathToStatsDir, fileName);
+            stats = (fs.existsSync(pathToStatsFile)) ? readJson(pathToStatsFile) : {};
+        }
 
         if (topicId in stats) {
             const topicStats = stats[topicId];
@@ -49,7 +57,7 @@ const addStats = (topicsStats, pathToStatsDir) => {
             topicStats.lately = lately;
 
             topicStats.times.push({
-                time: d.time, 
+                time, 
                 views: lately
             });
         } else {
@@ -60,7 +68,7 @@ const addStats = (topicsStats, pathToStatsDir) => {
                 lately: 0,
                 times: [
                     {
-                        time: d.time, 
+                        time, 
                         views: 0
                     }
                 ]
@@ -138,17 +146,6 @@ const printStats = (date, pathToStatsDir) => {
         border: getBorderCharacters('norc'),
         drawHorizontalLine: (index, size) => {
             return index === 0 || index === 1 || index === size;
-        },
-        columns: {
-            2: {
-                alignment: 'center'
-            },
-            3: {
-                alignment: 'center'
-            },
-            4: {
-                alignment: 'center'
-            }
         }
     }));
 }
