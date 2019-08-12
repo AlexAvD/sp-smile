@@ -380,17 +380,15 @@ main();
 
 /* (async () => {
     await login();
-    try {
-        const pages = await getPagesWithDelLinks(1889576, 1);
-        const delLinks = pages.reduce((delLinks, $) => [...delLinks, ...getDelLinksOnPage($)], []);
-        console.log(delLinks);
-    } catch (e) {
-        console.log(e);
-    }
     
-})();
+    try {
+     
+    } catch (e) {
+    
+    }
+})(); */
 
- */
+
 
 
 

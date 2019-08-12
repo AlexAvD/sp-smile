@@ -1,11 +1,12 @@
 const fs    = require('fs');
 const iconv = require('iconv-lite');
+const he    = require('he');
 
 const readJson = (pathToFile) => JSON.parse(fs.readFileSync(pathToFile));
 const saveJson = (path, obj, separator) => {fs.writeFileSync(path, JSON.stringify(obj, null, separator), (err) => {if (err) console.log(err)})};
 
 const normalizeSpaces = (str) => str.replace(/^\s+|\s(?=\s)|\s+$/g, '');
-const removeSmiles = (str) => normalizeSpaces(str.replace(/[^\s\wа-яё.,\/#!$%\^&\*;:@{}=\-`"'+~()\[\]=\\]/ig, ' '));
+const removeSmiles = (str) => normalizeSpaces(str.replace(/[^\s\wа-яё.,\/#!$%\^&\*;:@№|{}=\-`"'+~()\[\]=\\]/ig, ''));
 const normalizeBody = (body) => iconv.encode(iconv.decode(body, 'win1251'), 'utf8');
 
 const getFileModTime = (pathToFile) => fs.statSync(pathToFile).mtime;
