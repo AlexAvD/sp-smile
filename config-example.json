@@ -1,0 +1,34 @@
+{
+    "topic": {
+        "file": "./posts.txt",
+        "edit": "http://www.sp-mamrostova.ru/index.php?action=post;topic=",
+        "send": "http://www.sp-mamrostova.ru/index.php?action=post2",
+        "view": "http://www.sp-mamrostova.ru/index.php/topic,",
+        "form": {
+            "message": "[br][br][br][br][center][table][tr][td][hr][font=cursive][size=14pt][color=#4490CA][i]СОБИРАЕМ[/i][/color][/size][/font][hr][/td][/tr][/table][/center]",
+            "goback": "1"
+        },
+        "markToDel": "СОБИРАЕМ",
+        "numOfDelPages": "1",
+        "interval": "30",
+        "wait": "180"
+    },
+    "login": {
+        "url": "http://www.sp-mamrostova.ru/index.php?action=login2",
+        "form": {
+            "user": "",
+            "passwrd": "",
+            "cookieneverexp": "on",
+            "hash_passwrd": ""
+        },
+        "again": "5"
+    },
+    "stats": {
+        "dir": "./statistics/",
+        "trackFile": "./track.txt",
+        "trackDir": "./statistics/track/"
+    },
+    "error": {
+        "file": "./error.log"
+    }
+}
